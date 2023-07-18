@@ -1,7 +1,15 @@
-import { redirect, type ActionArgs } from "@remix-run/node";
-import { db } from "../utils/db.server";
+import type { ActionArgs, LoaderArgs } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
+import {
+  Link,
+  isRouteErrorResponse,
+  useActionData,
+  useRouteError,
+} from "@remix-run/react";
+
+import { db } from "~/utils/db.server";
 import { badRequest } from "~/utils/request.server";
-import { useActionData } from "@remix-run/react";
+import { getUserId, requireUserId } from "~/utils/session.server";
 
 function validateJokeContent(content: string) {
   if (content.length < 10) {
@@ -14,16 +22,24 @@ function validateJokeName(name: string) {
     return "That joke's name is too short";
   }
 }
+export const loader = async ({ request }: LoaderArgs) => {
+  const userId = await getUserId(request);
+  if (!userId) {
+    throw new Response("Unauthorized", { status: 401 });
+  }
+  return json({});
+};
 
 export const action = async ({ request }: ActionArgs) => {
+  const userId = await requireUserId(request);
   const form = await request.formData();
   const content = form.get("content");
   const name = form.get("name");
   if (typeof content !== "string" || typeof name !== "string") {
     return badRequest({
-      fieldError: null,
+      fieldErrors: null,
       fields: null,
-      formError: "Form not submitted correctly",
+      formError: "Form not submitted correctly.",
     });
   }
 
@@ -39,14 +55,16 @@ export const action = async ({ request }: ActionArgs) => {
       formError: null,
     });
   }
+
   const joke = await db.joke.create({
-    data: fields,
+    data: { ...fields, jokesterId: userId },
   });
   return redirect(`/jokes/${joke.id}`);
 };
 
 export default function NewJokeRoute() {
   const actionData = useActionData<typeof action>();
+
   return (
     <div>
       <p>Add your own hilarious joke</p>
@@ -103,6 +121,22 @@ export default function NewJokeRoute() {
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+export function ErrorBoundary() {
+  const error = useRouteError();
+  if (isRouteErrorResponse(error) && error.status === 401) {
+    return (
+      <div className="error-container">
+        <p>You must be logged in to create a joke.</p>
+        <Link to="/login">Login</Link>
+      </div>
+    );
+  }
+  return (
+    <div className="error-container">
+      Something unexpected went wrong. Sorry about that.
     </div>
   );
 }

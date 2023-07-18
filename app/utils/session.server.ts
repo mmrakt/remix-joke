@@ -43,6 +43,32 @@ const storage = createCookieSessionStorage({
   },
 });
 
+function getUserSession(request: Request) {
+  return storage.getSession(request.headers.get("Cookie"));
+}
+
+export async function getUserId(request: Request) {
+  const session = await getUserSession(request);
+  const userId = session.get("userId");
+  if (!userId || typeof userId !== "string") {
+    return null;
+  }
+  return userId;
+}
+
+export async function requireUserId(
+  request: Request,
+  redirectTo: string = new URL(request.url).pathname
+) {
+  const session = await getUserSession(request);
+  const userId = session.get("userId");
+  if (!userId || typeof userId !== "string") {
+    const searchParams = new URLSearchParams([["redirectTo", redirectTo]]);
+    throw redirect(`/login?${searchParams}`);
+  }
+  return userId;
+}
+
 export async function createUserSession(userId: string, redirectTo: string) {
   const session = await storage.getSession();
   session.set("userId", userId);
@@ -51,4 +77,36 @@ export async function createUserSession(userId: string, redirectTo: string) {
       "Set-Cookie": await storage.commitSession(session),
     },
   });
+}
+
+export async function getUser(request: Request) {
+  const userId = await getUserId(request);
+  if (typeof userId !== "string") {
+    return null;
+  }
+  const user = await db.user.findUnique({
+    select: { id: true, username: true },
+    where: { id: userId },
+  });
+  if (!user) {
+    throw await logout(request);
+  }
+  return user;
+}
+
+export async function logout(request: Request) {
+  const session = await getUserSession(request);
+  return redirect("/login", {
+    headers: {
+      "Set-Cookie": await storage.destroySession(session),
+    },
+  });
+}
+
+export async function register({ password, username }: LoginForm) {
+  const passwordHash = await bcrypt.hash(password, 10);
+  const user = await db.user.create({
+    data: { passwordHash, username },
+  });
+  return { id: user.id, username };
 }
