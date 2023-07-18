@@ -29,7 +29,7 @@ export default function App() {
       </head>
       <body>
         <Outlet />
-        <LiveReload />
+        <LiveReload port={8002} />
       </body>
     </html>
   );
